@@ -944,7 +944,7 @@ var testVal = function( valueObj ) {
 	equal( document.getElementById("text1").value, "", "Check for modified (via val(null)) value of input element" );
 
 	var j,
-		$select = jQuery( "<select multiple><option value='1'/><option value='2'/></select>" ),
+		$select = jQuery( "<select multiple><option value='1'></option><option value='2'></option></select>" ),
 		$select1 = jQuery("#select1");
 
 	$select1.val( valueObj("3") );

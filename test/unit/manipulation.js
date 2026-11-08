@@ -1615,7 +1615,7 @@ function testHtml( valueObj ) {
 		div = jQuery("<div></div>"),
 		fixture = jQuery("#qunit-fixture");
 
-	div.html( valueObj("<div id='parent_1'><div id='child_1'/></div><div id='parent_2'/>") );
+	div.html( valueObj("<div id='parent_1'><div id='child_1'></div></div><div id='parent_2'></div>") );
 	equal( div.children().length, 2, "Found children" );
 	equal( div.children().children().length, 1, "Found grandchild" );
 
@@ -1675,7 +1675,7 @@ function testHtml( valueObj ) {
 	equal( expected.length, 1, "Expecting one parent" );
 	deepEqual( actual, expected, "Found the inserted style element" );
 
-	fixture.html( valueObj("<select/>") );
+	fixture.html( valueObj("<select></select>") );
 	jQuery("#qunit-fixture select").html( valueObj("<option>O1</option><option selected='selected'>O2</option><option>O3</option>") );
 	equal( jQuery("#qunit-fixture select").val(), "O2", "Selected option correct" );
 
@@ -2231,7 +2231,7 @@ test( "Guard against exceptions when clearing safeChildNodes", function() {
 	var div;
 
 	try {
-		div = jQuery("<div/><hr/><code/><b/>");
+		div = jQuery("<div></div><hr/><code></code><b></b>");
 	} catch(e) {}
 
 	ok( div && div.jquery, "Created nodes safely, guarded against exceptions on safeChildNodes[ -1 ]" );
@@ -2348,7 +2348,7 @@ test( "script evaluation (#11795)", function() {
 
 	if ( jQuery.ajax ) {
 		Globals.register("testBar");
-		jQuery("#qunit-fixture").append( "<script src='" + url("data/testbar.php") + "'/>" );
+		jQuery("#qunit-fixture").append( "<script src='" + url("data/testbar.php") + "'></script>" );
 		strictEqual( window["testBar"], "bar", "Global script evaluation" );
 	} else {
 		ok( true, "No jQuery.ajax" );
@@ -2370,7 +2370,7 @@ test( "jQuery._evalUrl (#12838)", function() {
 		equal( ( input.url || input ).slice( -1 ), expectedArgument, message );
 		expectedArgument++;
 	};
-	jQuery("#qunit-fixture").append("<script src='1'/><script src='2'/>");
+	jQuery("#qunit-fixture").append("<script src='1'></script><script src='2'></script>");
 	equal( expectedArgument, 3, "synchronous execution" );
 
 	message = "custom implementation";
@@ -2379,7 +2379,7 @@ test( "jQuery._evalUrl (#12838)", function() {
 	jQuery.ajax = function( options ) {
 		strictEqual( options, {}, "Unexpected call to jQuery.ajax" );
 	};
-	jQuery("#qunit-fixture").append("<script src='3'/><script src='4'/>");
+	jQuery("#qunit-fixture").append("<script src='3'></script><script src='4'></script>");
 
 	jQuery.ajax = ajax;
 	jQuery._evalUrl = evalUrl;
@@ -2422,7 +2422,7 @@ test( "insertAfter, insertBefore, etc do not work when destination is original e
 test( "Index for function argument should be received (#13094)", 2, function() {
 	var i = 0;
 
-	jQuery("<div/><div/>").before(function( index ) {
+	jQuery("<div></div><div></div>").before(function( index ) {
 		equal( index, i++, "Index should be correct" );
 	});
 
@@ -2435,4 +2435,127 @@ test( "Make sure jQuery.fn.remove can work on elements in documentFragment", 1, 
 	jQuery( div ).remove();
 
 	equal( fragment.childNodes.length, 0, "div element was removed from documentFragment" );
+});
+
+test( "Self-closing non-void tags are not expanded to closed elements (gh-4642)", function() {
+
+	expect( 9 );
+
+	var div = jQuery("<div></div>").html("<div/><div/>");
+	equal( div.children().length, 1, "html(): Found one child" );
+	equal( div.children().children().length, 1, "html(): Found one grandchild" );
+
+	div = jQuery("<div></div>").append("<div/><div/>");
+	equal( div.children().length, 1, "append(): Found one child" );
+	equal( div.children().children().length, 1, "append(): Found one grandchild" );
+
+	div = jQuery("<div/><div/>");
+	equal( div.length, 1, "jQuery(): Found one top-level element" );
+	equal( div.children().length, 1, "jQuery(): Found one child" );
+
+	equal( jQuery.parseHTML("<div/><div/>").length, 1, "jQuery.parseHTML(): Found one top-level element" );
+
+	equal( jQuery("<div></div>").html("<div></div><div></div>").children().length, 2,
+		"Explicitly closed tags still create sibling elements" );
+	equal( jQuery("<div></div>").html("<img/><br/><input/>").children().length, 3,
+		"Self-closing void tags still create sibling elements" );
+});
+
+asyncTest( "Sanitized HTML doesn't get unsanitized (gh-4642)", function() {
+
+	var container, i, j, payload, polls,
+		pairs = [],
+		executed = [],
+		controlFired = false,
+
+		// "xss(#)" is replaced with a unique index for every htmlString/method pair.
+		// Thanks to Masato Kinugawa from Cure53 for providing the following test cases.
+		htmlStrings = [
+			"<img alt=\"<x\" title=\"/><img src=url404 onerror=xss(#)>\">",
+			"<img alt=\"\n<x\" title=\"/>\n<img src=url404 onerror=xss(#)>\">",
+			"<style><style/><img src=url404 onerror=xss(#)>",
+			"<xmp><xmp/><img src=url404 onerror=xss(#)>",
+			"<title><title /><img src=url404 onerror=xss(#)>",
+			"<iframe><iframe/><img src=url404 onerror=xss(#)>",
+			"<noframes><noframes/><img src=url404 onerror=xss(#)>",
+			"<noscript><noscript/><img src=url404 onerror=xss(#)>",
+			"<foo\" alt=\"\" title=\"/><img src=url404 onerror=xss(#)>\">",
+			"<img alt=\"<x\" title=\"\" src=\"/><img src=url404 onerror=xss(#)>\">",
+			"<noscript/><img src=url404 onerror=xss(#)>",
+			"<textarea><textarea/><img src=url404 onerror=xss(#)>",
+			"<noembed><noembed/><img src=url404 onerror=xss(#)>"
+		],
+
+		// Every public entry point that turns an HTML string into DOM nodes
+		methods = [
+			[ "html", function( html ) {
+				jQuery("<div></div>").appendTo( container ).html( html );
+			} ],
+			[ "append", function( html ) {
+				jQuery("<div></div>").appendTo( container ).append( html );
+			} ],
+			[ "prepend", function( html ) {
+				jQuery("<div></div>").appendTo( container ).prepend( html );
+			} ],
+			[ "before", function( html ) {
+				jQuery("<div></div>").appendTo( container ).before( html );
+			} ],
+			[ "after", function( html ) {
+				jQuery("<div></div>").appendTo( container ).after( html );
+			} ],
+			[ "replaceWith", function( html ) {
+				jQuery("<div></div>").appendTo( container ).replaceWith( html );
+			} ],
+			[ "jQuery", function( html ) {
+				jQuery( html );
+			} ],
+			[ "jQuery.parseHTML", function( html ) {
+
+				// Use the live document as context; an inert document
+				// never loads images, so it can't expose the payload
+				jQuery.parseHTML( html, document );
+			} ]
+		];
+
+	expect( htmlStrings.length + 1 );
+
+	Globals.register("xss");
+	window.xss = function( index ) {
+		if ( index === -1 ) {
+			controlFired = true;
+		} else {
+			executed[ pairs[ index ][ 0 ] ].push( pairs[ index ][ 1 ] );
+		}
+	};
+
+	container = jQuery("<div></div>").appendTo("#qunit-fixture");
+
+	for ( i = 0; i < htmlStrings.length; i++ ) {
+		executed.push( [] );
+		for ( j = 0; j < methods.length; j++ ) {
+			payload = htmlStrings[ i ].replace( "xss(#)", "xss(" + pairs.length + ")" );
+			pairs.push( [ i, methods[ j ][ 0 ] ] );
+			methods[ j ][ 1 ]( payload );
+		}
+	}
+
+	// Control: a plainly injected handler does fire, proving the url404
+	// payloads above would have run had they survived as <img> elements
+	jQuery("<div></div>").appendTo( container ).html("<img src=url404 onerror=xss(-1)>");
+
+	// Wait for the control image to fail, then give the payloads a little longer
+	polls = 0;
+	(function check() {
+		if ( !controlFired && polls++ < 200 ) {
+			setTimeout( check, 50 );
+			return;
+		}
+		setTimeout(function() {
+			ok( controlFired, "Control: an injected onerror handler runs in this environment" );
+			for ( i = 0; i < htmlStrings.length; i++ ) {
+				deepEqual( executed[ i ], [], "htmlString #" + i + " (" + htmlStrings[ i ] + ") isn't evaluated" );
+			}
+			start();
+		}, 500 );
+	})();
 });
