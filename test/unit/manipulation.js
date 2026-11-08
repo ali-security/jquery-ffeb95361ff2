@@ -2517,6 +2517,15 @@ asyncTest( "Sanitized HTML doesn't get unsanitized (gh-4642)", function() {
 			} ]
 		];
 
+	// Support: IE<=9 only
+	// IE<=9 still wraps <option> & <optgroup> in a <select> (CVE-2020-11023)
+	if ( jQuery.support.option ) {
+		htmlStrings.push(
+			"<option><style></option></select><img src=url404 onerror=xss(#)></style>",
+			"<optgroup><style></optgroup></select><img src=url404 onerror=xss(#)></style>"
+		);
+	}
+
 	expect( htmlStrings.length + 1 );
 
 	Globals.register("xss");
@@ -2558,4 +2567,68 @@ asyncTest( "Sanitized HTML doesn't get unsanitized (gh-4642)", function() {
 			start();
 		}, 500 );
 	})();
+});
+
+test( "<option> & <optgroup> HTML is parsed like innerHTML, not inside a <select> (CVE-2020-11023)", function() {
+
+	var i, j, html, nativeDiv, expected,
+
+		// Markup following a leading <option>/<optgroup> that a <select> wrapper
+		// would re-parse differently from a generic container
+		htmlStrings = [
+			"<option>a</option><input>",
+			"<optgroup label='g'><option>a</option></optgroup><input>",
+			"<option>a</option><textarea>b</textarea>",
+			"<option>a</option><select><option>b</option></select>"
+		],
+
+		methods = [
+			[ "html", function( html ) {
+				return jQuery("<div></div>").html( html ).contents();
+			} ],
+			[ "append", function( html ) {
+				return jQuery("<div></div>").append( html ).contents();
+			} ],
+			[ "jQuery", function( html ) {
+				return jQuery( html );
+			} ],
+			[ "jQuery.parseHTML", function( html ) {
+				return jQuery.parseHTML( html );
+			} ]
+		];
+
+	function nodeNames( nodes ) {
+		var k,
+			names = [];
+
+		for ( k = 0; k < nodes.length; k++ ) {
+			names.push( nodes[ k ].nodeName.toLowerCase() );
+		}
+
+		return names.join(",");
+	}
+
+	// Support: IE<=9 only
+	// IE<=9 drops <option> & <optgroup> outside of a <select>, so they are still wrapped there
+	if ( !jQuery.support.option ) {
+		expect( 1 );
+		ok( true, "<option> needs the <select> wrapper in this browser" );
+		return;
+	}
+
+	expect( htmlStrings.length * methods.length );
+
+	for ( i = 0; i < htmlStrings.length; i++ ) {
+		html = htmlStrings[ i ];
+
+		// What an HTML sanitizer sees when it parses the string in a generic container
+		nativeDiv = document.createElement("div");
+		nativeDiv.innerHTML = html;
+		expected = nodeNames( nativeDiv.childNodes );
+
+		for ( j = 0; j < methods.length; j++ ) {
+			equal( nodeNames( methods[ j ][ 1 ]( html ) ), expected,
+				methods[ j ][ 0 ] + "(): " + html + " is parsed as in a generic container" );
+		}
+	}
 });
