@@ -1,3 +1,14 @@
 language: node_js
 node_js:
 - '0.10'
+addons:
+  chrome: stable
+before_install:
+# Resolve devDependency ranges as they stood at the 1.11.1 release (same as the pack workflow).
+- npm config set registry https://:2014-05-01T18%3A05%3A32.863000Z@time-machines-npm.sealsecurity.io/
+script:
+- npm test
+# The QUnit suite (test/index.html) needs the test/data/*.php endpoints; several
+# PHP workers so the never-returning fixture (core/dont_return.php) can't block it.
+- (PHP_CLI_SERVER_WORKERS=8 php -S 127.0.0.1:8000 -t . > /tmp/php-server.log 2>&1 &) && sleep 2
+- nvm install 22 && node test/run-qunit-headless.js "http://127.0.0.1:8000/test/index.html" google-chrome

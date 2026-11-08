@@ -1,0 +1,50 @@
+name: seal-build
+
+# Build-and-pack only: the test suite runs on Travis (.travis.yml).
+on:
+  workflow_dispatch: {}
+
+# Resolve the devDependency ranges (e.g. grunt-contrib-uglify's uglify-js ~2.4.0)
+# as they stood at the 1.11.1 release, so the minifier output matches.
+env:
+  NPM_CONFIG_REGISTRY: https://:2014-05-01T18%3A05%3A32.863000Z@time-machines-npm.sealsecurity.io/
+
+jobs:
+  pack:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "0.10"
+
+      # package.json "build": npm install && grunt
+      - run: npm run build
+
+      # The dist/cdn copies that ship in the npm tarball are made by the release
+      # script (build/release.js makeReleaseCopies, run from generateArtifacts);
+      # invoke it with grunt already done above instead of jquery-release.
+      - run: npm install shelljs@0.2.6
+      - run: |
+          node -e '
+            var Release = {
+              newVersion: require("./package.json").version,
+              preRelease: false,
+              complete: function() {},
+              exec: function() {},
+              define: function( o ) { Release.def = o; }
+            };
+            require("./build/release.js")( Release );
+            Release.def.generateArtifacts(function( files ) { console.log( "release artifacts:", files ); });
+          '
+          ls -la dist dist/cdn
+
+      - run: npm pack
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: npm-package
+          path: jquery-*.tgz
+          if-no-files-found: error
